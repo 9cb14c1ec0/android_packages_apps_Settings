@@ -43,6 +43,7 @@ import com.android.settings.biometrics.BiometricEnrollSidecar;
 import com.android.settings.core.InstrumentedPreferenceFragment;
 
 import java.util.Arrays;
+import java.util.function.Consumer;
 
 /**
  * Fragment that contains the logic for showing and controlling the camera preview, circular
@@ -75,6 +76,10 @@ public class FaceEnrollPreviewFragment extends InstrumentedPreferenceFragment
     // Texture used for showing the camera preview
     private FaceSquareTextureView mTextureView;
 
+    // Preview surface handed to the face HAL when it draws the preview itself.
+    private Surface mHalPreviewSurface;
+    private Consumer<Surface> mHalPreviewSurfaceConsumer;
+
     // Listener sent to the animation drawable
     private final ParticleCollection.Listener mAnimationListener
             = new ParticleCollection.Listener() {
@@ -102,6 +107,10 @@ public class FaceEnrollPreviewFragment extends InstrumentedPreferenceFragment
 
         @Override
         public boolean onSurfaceTextureDestroyed(SurfaceTexture surfaceTexture) {
+            if (mHalPreviewSurface != null) {
+                mHalPreviewSurface.release();
+                mHalPreviewSurface = null;
+            }
             return true;
         }
 
@@ -221,6 +230,15 @@ public class FaceEnrollPreviewFragment extends InstrumentedPreferenceFragment
     }
 
     @Override
+    public void onDestroy() {
+        super.onDestroy();
+        if (mHalPreviewSurface != null) {
+            mHalPreviewSurface.release();
+            mHalPreviewSurface = null;
+        }
+    }
+
+    @Override
     public void onEnrollmentError(int errMsgId, CharSequence errString) {
         mAnimationDrawable.onEnrollmentError(errMsgId, errString);
     }
@@ -272,12 +290,43 @@ public class FaceEnrollPreviewFragment extends InstrumentedPreferenceFragment
      * @param height The height of the texture view
      */
     private void openCamera(int width, int height) {
+        if (!getResources().getBoolean(R.bool.config_face_enroll_camera_preview)) {
+            setUpHalPreview(width, height);
+            return;
+        }
         try {
             setUpCameraOutputs();
             mCameraManager.openCamera(mCameraId, mCameraStateCallback, mHandler);
             configureTransform(width, height);
         } catch (CameraAccessException e) {
             Log.e(TAG, "Unable to open camera", e);
+        }
+    }
+
+    /**
+     * Sets `consumer` to receive the preview surface once it is available, for the face HAL to
+     * draw the preview into.
+     */
+    public void setHalPreviewSurfaceConsumer(Consumer<Surface> consumer) {
+        mHalPreviewSurfaceConsumer = consumer;
+        if (consumer != null && mHalPreviewSurface != null) {
+            consumer.accept(mHalPreviewSurface);
+        }
+    }
+
+    private void setUpHalPreview(int width, int height) {
+        setUpCameraOutputs();
+        if (mPreviewSize == null) {
+            return;
+        }
+        if (mHalPreviewSurface == null) {
+            SurfaceTexture texture = mTextureView.getSurfaceTexture();
+            texture.setDefaultBufferSize(mPreviewSize.getWidth(), mPreviewSize.getHeight());
+            mHalPreviewSurface = new Surface(texture);
+        }
+        configureTransform(width, height);
+        if (mHalPreviewSurfaceConsumer != null) {
+            mHalPreviewSurfaceConsumer.accept(mHalPreviewSurface);
         }
     }
 

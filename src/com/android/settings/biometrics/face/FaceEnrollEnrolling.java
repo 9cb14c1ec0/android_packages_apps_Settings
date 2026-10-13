@@ -26,6 +26,7 @@ import android.content.Intent;
 import android.os.Bundle;
 import android.text.TextUtils;
 import android.util.Log;
+import android.view.Surface;
 import android.view.View;
 import android.view.animation.AnimationUtils;
 import android.view.animation.Interpolator;
@@ -45,6 +46,7 @@ import com.google.android.setupcompat.template.FooterButton;
 import com.google.android.setupcompat.util.WizardManagerHelper;
 
 import java.util.ArrayList;
+import java.util.function.Consumer;
 
 public class FaceEnrollEnrolling extends BiometricsEnrollEnrolling {
 
@@ -153,6 +155,16 @@ public class FaceEnrollEnrolling extends BiometricsEnrollEnrolling {
                     .commitAllowingStateLoss();
         }
         mPreviewFragment.setListener(mListener);
+    }
+
+    /**
+     * Sets `consumer` to receive the enrollment preview surface once it is available, for the face
+     * HAL to draw the preview into.
+     */
+    void setHalPreviewSurfaceConsumer(Consumer<Surface> consumer) {
+        if (mPreviewFragment != null) {
+            mPreviewFragment.setHalPreviewSurfaceConsumer(consumer);
+        }
     }
 
     @Override

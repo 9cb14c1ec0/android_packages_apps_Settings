@@ -20,6 +20,9 @@ import android.app.Activity;
 import android.app.settings.SettingsEnums;
 import android.content.Intent;
 import android.hardware.face.FaceManager;
+import android.view.Surface;
+
+import com.android.settings.R;
 
 import com.android.settings.biometrics.BiometricEnrollSidecar;
 
@@ -36,6 +39,8 @@ public class FaceEnrollSidecar extends BiometricEnrollSidecar {
 
     private Intent mIntent;
 
+    private boolean mWaitingForPreviewSurface;
+
     public FaceEnrollSidecar(int[] disabledFeatures, Intent intent) {
         mDisabledFeatures = Arrays.copyOf(disabledFeatures, disabledFeatures.length);
         mIntent = intent;
@@ -50,8 +55,31 @@ public class FaceEnrollSidecar extends BiometricEnrollSidecar {
     @Override
     public void startEnrollment() {
         super.startEnrollment();
+        if (!getResources().getBoolean(R.bool.config_face_enroll_camera_preview)
+                && getActivity() instanceof FaceEnrollEnrolling) {
+            // The face HAL draws the preview; enroll once the preview surface is ready.
+            mWaitingForPreviewSurface = true;
+            ((FaceEnrollEnrolling) getActivity())
+                    .setHalPreviewSurfaceConsumer(this::onHalPreviewSurfaceAvailable);
+            return;
+        }
         mFaceUpdater.enroll(mUserId, mToken, mEnrollmentCancel,
                 mEnrollmentCallback, mDisabledFeatures, mIntent);
+    }
+
+    @Override
+    public boolean cancelEnrollment() {
+        mWaitingForPreviewSurface = false;
+        return super.cancelEnrollment();
+    }
+
+    private void onHalPreviewSurfaceAvailable(Surface surface) {
+        if (!mWaitingForPreviewSurface || mEnrollmentCancel.isCanceled()) {
+            return;
+        }
+        mWaitingForPreviewSurface = false;
+        mFaceUpdater.enroll(mUserId, mToken, mEnrollmentCancel, mEnrollmentCallback,
+                mDisabledFeatures, surface, false /* debugConsent */, mIntent);
     }
 
     private FaceManager.EnrollmentCallback mEnrollmentCallback
